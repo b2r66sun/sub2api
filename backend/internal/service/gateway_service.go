@@ -6093,6 +6093,7 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 	}
 	// Real Claude CLI uses Accept: application/json (even for streaming).
 	req.Header.Set("accept", "application/json")
+	req.Header.Set("accept-language", "*")
 	if isStream {
 		req.Header.Set("x-stainless-helper-method", "stream")
 	}

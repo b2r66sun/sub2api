@@ -139,7 +139,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	schedulerSnapshotService := service.ProvideSchedulerSnapshotService(schedulerCache, schedulerOutboxRepository, accountRepository, groupRepository, configConfig)
 	antigravityTokenProvider := service.ProvideAntigravityTokenProvider(accountRepository, geminiTokenCache, antigravityOAuthService, oauthRefreshAPI, tempUnschedCache)
 	antigravityGatewayService := service.NewAntigravityGatewayService(accountRepository, gatewayCache, schedulerSnapshotService, antigravityTokenProvider, rateLimitService, httpUpstream, settingService)
-	accountTestService := service.NewAccountTestService(accountRepository, geminiTokenProvider, antigravityGatewayService, httpUpstream, configConfig)
+	accountTestService := service.NewAccountTestService(accountRepository, geminiTokenProvider, antigravityGatewayService, identityService, httpUpstream, configConfig)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	sessionLimitCache := repository.ProvideSessionLimitCache(redisClient, configConfig)
 	rpmCache := repository.NewRPMCache(redisClient)

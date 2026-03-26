@@ -9,6 +9,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -16,7 +17,7 @@ import (
 const defaultClaudeUsageURL = "https://api.anthropic.com/api/oauth/usage"
 
 // 默认 User-Agent，与用户抓包的请求一致
-const defaultUsageUserAgent = "claude-code/2.1.7"
+const defaultUsageUserAgent = "claude-cli/2.1.84 (external, cli)"
 
 type claudeUsageService struct {
 	usageURL          string
@@ -65,6 +66,33 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 		userAgent = opts.Fingerprint.UserAgent
 	}
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("X-Stainless-Lang", claude.DefaultHeaders["X-Stainless-Lang"])
+	req.Header.Set("X-Stainless-Package-Version", claude.DefaultHeaders["X-Stainless-Package-Version"])
+	req.Header.Set("X-Stainless-OS", claude.DefaultHeaders["X-Stainless-OS"])
+	req.Header.Set("X-Stainless-Arch", claude.DefaultHeaders["X-Stainless-Arch"])
+	req.Header.Set("X-Stainless-Runtime", claude.DefaultHeaders["X-Stainless-Runtime"])
+	req.Header.Set("X-Stainless-Runtime-Version", claude.DefaultHeaders["X-Stainless-Runtime-Version"])
+	req.Header.Set("accept-language", "*")
+	if opts.Fingerprint != nil {
+		if opts.Fingerprint.StainlessLang != "" {
+			req.Header.Set("X-Stainless-Lang", opts.Fingerprint.StainlessLang)
+		}
+		if opts.Fingerprint.StainlessPackageVersion != "" {
+			req.Header.Set("X-Stainless-Package-Version", opts.Fingerprint.StainlessPackageVersion)
+		}
+		if opts.Fingerprint.StainlessOS != "" {
+			req.Header.Set("X-Stainless-OS", opts.Fingerprint.StainlessOS)
+		}
+		if opts.Fingerprint.StainlessArch != "" {
+			req.Header.Set("X-Stainless-Arch", opts.Fingerprint.StainlessArch)
+		}
+		if opts.Fingerprint.StainlessRuntime != "" {
+			req.Header.Set("X-Stainless-Runtime", opts.Fingerprint.StainlessRuntime)
+		}
+		if opts.Fingerprint.StainlessRuntimeVersion != "" {
+			req.Header.Set("X-Stainless-Runtime-Version", opts.Fingerprint.StainlessRuntimeVersion)
+		}
+	}
 
 	var resp *http.Response
 

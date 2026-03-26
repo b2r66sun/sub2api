@@ -60,6 +60,7 @@ type TestEvent struct {
 const (
 	defaultGeminiTextTestPrompt  = "hi"
 	defaultGeminiImageTestPrompt = "Generate a cute orange cat astronaut sticker on a clean pastel background."
+	defaultClaudeTestPrompt      = "Please reply with one short sentence confirming that the Claude Code connection is working."
 )
 
 // AccountTestService handles account testing operations
@@ -67,6 +68,7 @@ type AccountTestService struct {
 	accountRepo               AccountRepository
 	geminiTokenProvider       *GeminiTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
+	identityService           *IdentityService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
 	soraTestGuardMu           sync.Mutex
@@ -81,6 +83,7 @@ func NewAccountTestService(
 	accountRepo AccountRepository,
 	geminiTokenProvider *GeminiTokenProvider,
 	antigravityGatewayService *AntigravityGatewayService,
+	identityService *IdentityService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 ) *AccountTestService {
@@ -88,6 +91,7 @@ func NewAccountTestService(
 		accountRepo:               accountRepo,
 		geminiTokenProvider:       geminiTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
+		identityService:           identityService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
 		soraTestLastRun:           make(map[int64]time.Time),
@@ -114,22 +118,25 @@ func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error)
 }
 
 // generateSessionString generates a Claude Code style session string.
-// The output format is determined by the UA version in claude.DefaultHeaders,
-// ensuring consistency between the user_id format and the UA sent to upstream.
-func generateSessionString() (string, error) {
+// The output format is determined by the supplied UA version, ensuring
+// consistency between metadata.user_id and the headers sent upstream.
+func generateSessionString(userAgent string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	hex64 := hex.EncodeToString(b)
 	sessionUUID := uuid.New().String()
-	uaVersion := ExtractCLIVersion(claude.DefaultHeaders["User-Agent"])
+	if strings.TrimSpace(userAgent) == "" {
+		userAgent = claude.DefaultHeaders["User-Agent"]
+	}
+	uaVersion := ExtractCLIVersion(userAgent)
 	return FormatMetadataUserID(hex64, "", sessionUUID, uaVersion), nil
 }
 
 // createTestPayload creates a Claude Code style test request payload
-func createTestPayload(modelID string) (map[string]any, error) {
-	sessionID, err := generateSessionString()
+func createTestPayload(modelID, userAgent string) (map[string]any, error) {
+	sessionID, err := generateSessionString(userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,7 @@ func createTestPayload(modelID string) (map[string]any, error) {
 				"content": []map[string]any{
 					{
 						"type": "text",
-						"text": "hi",
+						"text": defaultClaudeTestPrompt,
 						"cache_control": map[string]string{
 							"type": "ephemeral",
 						},
@@ -162,9 +169,9 @@ func createTestPayload(modelID string) (map[string]any, error) {
 		"metadata": map[string]string{
 			"user_id": sessionID,
 		},
-		"max_tokens":  1024,
-		"temperature": 1,
-		"stream":      true,
+		"tools":      []any{},
+		"max_tokens": 16384,
+		"stream":     true,
 	}, nil
 }
 
@@ -261,8 +268,25 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
+	var fingerprint *Fingerprint
+	if account.IsOAuth() && s.identityService != nil {
+		clientHeaders := http.Header{}
+		if c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
+		if err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to load fingerprint: %s", err.Error()))
+		}
+		fingerprint = fp
+	}
+
 	// Create Claude Code style payload (same for all account types)
-	payload, err := createTestPayload(testModelID)
+	fingerprintUserAgent := claude.DefaultHeaders["User-Agent"]
+	if fingerprint != nil && strings.TrimSpace(fingerprint.UserAgent) != "" {
+		fingerprintUserAgent = fingerprint.UserAgent
+	}
+	payload, err := createTestPayload(testModelID, fingerprintUserAgent)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
@@ -283,6 +307,10 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Apply Claude Code client headers
 	for key, value := range claude.DefaultHeaders {
 		req.Header.Set(key, value)
+	}
+	req.Header.Set("accept-language", "*")
+	if fingerprint != nil && s.identityService != nil {
+		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 
 	// Set authentication header

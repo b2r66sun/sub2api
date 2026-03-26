@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -11,6 +12,10 @@ import (
 )
 
 const scheduledTestDefaultMaxWorkers = 10
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 // ScheduledTestRunnerService periodically scans due test plans and executes them.
 type ScheduledTestRunnerService struct {
@@ -85,8 +90,8 @@ func (s *ScheduledTestRunnerService) Stop() {
 }
 
 func (s *ScheduledTestRunnerService) runScheduled() {
-	// Delay 10s so execution lands at ~:10 of each minute instead of :00.
-	time.Sleep(10 * time.Second)
+	// Delay with jitter so scheduled tests do not form a perfectly periodic fingerprint.
+	time.Sleep(10*time.Second + time.Duration(rand.Intn(50))*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
