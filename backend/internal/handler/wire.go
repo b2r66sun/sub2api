@@ -147,6 +147,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewErrorPassthroughHandler,
 	admin.NewAdminAPIKeyHandler,
 	admin.NewScheduledTestHandler,
+	NewSoraClientHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,
