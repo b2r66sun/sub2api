@@ -36,6 +36,7 @@ var headerWireCasing = map[string]string{
 	"sec-fetch-mode":                            "sec-fetch-mode",
 	"accept-encoding":                           "accept-encoding",
 	"authorization":                             "authorization",
+	"x-claude-code-session-id":                  "X-Claude-Code-Session-Id",
 }
 
 // headerWireOrder 定义真实 Claude CLI 发送 header 的顺序（基于抓包）。
@@ -52,9 +53,10 @@ var headerWireOrder = []string{
 	"X-Stainless-Runtime-Version",
 	"anthropic-dangerous-direct-browser-access",
 	"anthropic-version",
-	"authorization",
 	"x-app",
 	"User-Agent",
+	"X-Claude-Code-Session-Id",
+	"authorization",
 	"content-type",
 	"anthropic-beta",
 	"accept-language",

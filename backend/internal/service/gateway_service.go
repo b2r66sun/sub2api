@@ -368,6 +368,7 @@ var allowedHeaders = map[string]bool{
 	"user-agent":                                true,
 	"content-type":                              true,
 	"accept-encoding":                           true,
+	"x-claude-code-session-id":                  true,
 }
 
 // GatewayCache 定义网关服务的缓存操作接口。
@@ -5694,6 +5695,16 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 
+	// 同步 X-Claude-Code-Session-Id header 与 metadata.user_id 中的 session_id。
+	// 当 session_id_masking 启用时，body 中的 session_id 已被替换为伪装值，
+	// 需要将 header 同步更新，避免 header 与 body 不一致被检测。
+	// 当未启用 masking 时，也需要同步重写后的 session_id（因为 RewriteUserID 会生成新的 session hash）。
+	if sessionHdr := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); sessionHdr != "" {
+		if parsed := ParseMetadataUserID(gjson.GetBytes(body, "metadata.user_id").String()); parsed != nil && parsed.SessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
+		}
+	}
+
 	// 确保必要的headers存在（保持原始大小写）
 	if getHeaderRaw(req.Header, "content-type") == "" {
 		setHeaderRaw(req.Header, "content-type", "application/json")
@@ -8401,6 +8412,13 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// OAuth 账号：应用指纹到请求头（受设置开关控制）
 	if ctEnableFP && ctFingerprint != nil {
 		s.identityService.ApplyFingerprint(req, ctFingerprint)
+	}
+
+	// 同步 X-Claude-Code-Session-Id header（与 buildUpstreamRequest 逻辑一致）
+	if sessionHdr := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); sessionHdr != "" {
+		if parsed := ParseMetadataUserID(gjson.GetBytes(body, "metadata.user_id").String()); parsed != nil && parsed.SessionID != "" {
+			setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
+		}
 	}
 
 	// 确保必要的 headers 存在（保持原始大小写）
