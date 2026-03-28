@@ -55,10 +55,12 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 	}
 
 	// 设置请求头（绕过 Go canonical-case 归一化，保持真实 wire casing）
+	// 注意：这是 GET 请求，不设置 content-type（真实 CLI 的 GET 请求不带 content-type）
 	req.Header["Accept"] = []string{"application/json, text/plain, */*"}
-	req.Header["content-type"] = []string{"application/json"}
 	req.Header["authorization"] = []string{"Bearer " + opts.AccessToken}
 	req.Header["anthropic-beta"] = []string{"oauth-2025-04-20"}
+	req.Header["anthropic-dangerous-direct-browser-access"] = []string{"true"}
+	req.Header["x-app"] = []string{"cli"}
 
 	// 设置 User-Agent（优先使用缓存的 Fingerprint，否则使用默认值）
 	userAgent := defaultUsageUserAgent
