@@ -27,6 +27,7 @@ type requestCapture struct {
 	body        []byte
 	bodyJSON    map[string]any
 	contentType string
+	headers     http.Header
 }
 
 func newTestReqClient(rt http.RoundTripper) *req.Client {
@@ -84,6 +85,7 @@ func (s *ClaudeOAuthServiceSuite) TestGetOrganizationUUID() {
 			rt := newInProcessTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				captured.path = r.URL.Path
 				captured.cookies = r.Cookies()
+				captured.headers = r.Header.Clone()
 				tt.handler(w, r)
 			}), nil)
 
@@ -91,7 +93,7 @@ func (s *ClaudeOAuthServiceSuite) TestGetOrganizationUUID() {
 			require.True(s.T(), ok, "type assertion failed")
 			s.client = client
 			s.client.baseURL = "http://in-process"
-			s.client.clientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
+			s.client.browserClientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
 
 			got, err := s.client.GetOrganizationUUID(context.Background(), "sess", "")
 
@@ -134,6 +136,11 @@ func (s *ClaudeOAuthServiceSuite) TestGetAuthorizationCode() {
 				require.Equal(s.T(), http.MethodPost, captured.method, "expected POST")
 				require.Len(s.T(), captured.cookies, 1, "expected 1 cookie")
 				require.Equal(s.T(), "sess", captured.cookies[0].Value)
+				require.Equal(s.T(), oauth.BrowserAuthorizeAccept, captured.headers.Get("Accept"))
+				require.Equal(s.T(), oauth.BrowserAuthorizeAcceptLanguage, captured.headers.Get("Accept-Language"))
+				require.Equal(s.T(), oauth.BrowserAuthorizeCacheControl, captured.headers.Get("Cache-Control"))
+				require.Equal(s.T(), oauth.BrowserAuthorizeOrigin, captured.headers.Get("Origin"))
+				require.Equal(s.T(), oauth.BrowserAuthorizeReferer, captured.headers.Get("Referer"))
 				require.Equal(s.T(), "org-1", captured.bodyJSON["organization_uuid"])
 				require.Equal(s.T(), oauth.ClientID, captured.bodyJSON["client_id"])
 				require.Equal(s.T(), oauth.RedirectURI, captured.bodyJSON["redirect_uri"])
@@ -145,7 +152,7 @@ func (s *ClaudeOAuthServiceSuite) TestGetAuthorizationCode() {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]string{
-					"redirect_uri": oauth.RedirectURI + "?state=STATE", // no code
+					"redirect_uri": oauth.RedirectURI + "?state=STATE",
 				})
 			},
 			wantErr: true,
@@ -160,6 +167,7 @@ func (s *ClaudeOAuthServiceSuite) TestGetAuthorizationCode() {
 				captured.path = r.URL.Path
 				captured.method = r.Method
 				captured.cookies = r.Cookies()
+				captured.headers = r.Header.Clone()
 				captured.body, _ = io.ReadAll(r.Body)
 				_ = json.Unmarshal(captured.body, &captured.bodyJSON)
 				tt.handler(w, r)
@@ -169,7 +177,7 @@ func (s *ClaudeOAuthServiceSuite) TestGetAuthorizationCode() {
 			require.True(s.T(), ok, "type assertion failed")
 			s.client = client
 			s.client.baseURL = "http://in-process"
-			s.client.clientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
+			s.client.browserClientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
 
 			code, err := s.client.GetAuthorizationCode(context.Background(), "sess", "org-1", oauth.ScopeInference, "cc", "st", "")
 
@@ -211,19 +219,17 @@ func (s *ClaudeOAuthServiceSuite) TestExchangeCodeForToken() {
 			},
 			code:         "AUTH#STATE2",
 			isSetupToken: false,
-			wantResp: &oauth.TokenResponse{
-				AccessToken:  "at",
-				RefreshToken: "rt",
-			},
+			wantResp:     &oauth.TokenResponse{AccessToken: "at", RefreshToken: "rt"},
 			validate: func(captured requestCapture) {
 				require.Equal(s.T(), http.MethodPost, captured.method, "expected POST")
 				require.True(s.T(), strings.HasPrefix(captured.contentType, "application/json"), "unexpected content-type")
+				require.Equal(s.T(), oauth.TokenAccept, captured.headers.Get("Accept"))
+				require.Equal(s.T(), oauth.TokenUserAgent, captured.headers.Get("User-Agent"))
 				require.Equal(s.T(), "AUTH", captured.bodyJSON["code"])
 				require.Equal(s.T(), "STATE2", captured.bodyJSON["state"])
 				require.Equal(s.T(), oauth.ClientID, captured.bodyJSON["client_id"])
 				require.Equal(s.T(), oauth.RedirectURI, captured.bodyJSON["redirect_uri"])
 				require.Equal(s.T(), "ver", captured.bodyJSON["code_verifier"])
-				// Regular OAuth should not include expires_in
 				require.Nil(s.T(), captured.bodyJSON["expires_in"], "regular OAuth should not include expires_in")
 			},
 		},
@@ -231,19 +237,12 @@ func (s *ClaudeOAuthServiceSuite) TestExchangeCodeForToken() {
 			name: "setup_token_includes_expires_in",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{
-					AccessToken: "at",
-					TokenType:   "bearer",
-					ExpiresIn:   31536000,
-				})
+				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{AccessToken: "at", TokenType: "bearer", ExpiresIn: 31536000})
 			},
 			code:         "AUTH",
 			isSetupToken: true,
-			wantResp: &oauth.TokenResponse{
-				AccessToken: "at",
-			},
+			wantResp:     &oauth.TokenResponse{AccessToken: "at"},
 			validate: func(captured requestCapture) {
-				// Setup token should include expires_in with 1 year value
 				require.Equal(s.T(), float64(31536000), captured.bodyJSON["expires_in"],
 					"setup token should include expires_in: 31536000")
 			},
@@ -267,6 +266,7 @@ func (s *ClaudeOAuthServiceSuite) TestExchangeCodeForToken() {
 			rt := newInProcessTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				captured.method = r.Method
 				captured.contentType = r.Header.Get("Content-Type")
+				captured.headers = r.Header.Clone()
 				captured.body, _ = io.ReadAll(r.Body)
 				_ = json.Unmarshal(captured.body, &captured.bodyJSON)
 				tt.handler(w, r)
@@ -276,7 +276,7 @@ func (s *ClaudeOAuthServiceSuite) TestExchangeCodeForToken() {
 			require.True(s.T(), ok, "type assertion failed")
 			s.client = client
 			s.client.tokenURL = "http://in-process/token"
-			s.client.clientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
+			s.client.tokenClientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
 
 			resp, err := s.client.ExchangeCodeForToken(context.Background(), tt.code, "ver", "", "", tt.isSetupToken)
 
@@ -315,16 +315,13 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 					Scope:        "user:profile user:inference",
 				})
 			},
-			wantResp: &oauth.TokenResponse{
-				AccessToken:  "new_access_token",
-				RefreshToken: "new_refresh_token",
-			},
+			wantResp: &oauth.TokenResponse{AccessToken: "new_access_token", RefreshToken: "new_refresh_token"},
 			validate: func(captured requestCapture) {
 				require.Equal(s.T(), http.MethodPost, captured.method, "expected POST")
-				// 验证使用 JSON 格式（不是 form 格式）
 				require.True(s.T(), strings.HasPrefix(captured.contentType, "application/json"),
 					"expected JSON content-type, got: %s", captured.contentType)
-				// 验证 JSON body 内容
+				require.Equal(s.T(), oauth.TokenAccept, captured.headers.Get("Accept"))
+				require.Equal(s.T(), oauth.TokenUserAgent, captured.headers.Get("User-Agent"))
 				require.Equal(s.T(), "refresh_token", captured.bodyJSON["grant_type"])
 				require.Equal(s.T(), "rt", captured.bodyJSON["refresh_token"])
 				require.Equal(s.T(), oauth.ClientID, captured.bodyJSON["client_id"])
@@ -334,17 +331,9 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 			name: "returns_new_refresh_token",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{
-					AccessToken:  "at",
-					TokenType:    "bearer",
-					ExpiresIn:    28800,
-					RefreshToken: "rotated_rt", // Anthropic rotates refresh tokens
-				})
+				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{AccessToken: "at", TokenType: "bearer", ExpiresIn: 28800, RefreshToken: "rotated_rt"})
 			},
-			wantResp: &oauth.TokenResponse{
-				AccessToken:  "at",
-				RefreshToken: "rotated_rt",
-			},
+			wantResp: &oauth.TokenResponse{AccessToken: "at", RefreshToken: "rotated_rt"},
 		},
 		{
 			name: "non_200_returns_error",
@@ -363,6 +352,7 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 			rt := newInProcessTransport(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				captured.method = r.Method
 				captured.contentType = r.Header.Get("Content-Type")
+				captured.headers = r.Header.Clone()
 				captured.body, _ = io.ReadAll(r.Body)
 				_ = json.Unmarshal(captured.body, &captured.bodyJSON)
 				tt.handler(w, r)
@@ -372,7 +362,7 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 			require.True(s.T(), ok, "type assertion failed")
 			s.client = client
 			s.client.tokenURL = "http://in-process/token"
-			s.client.clientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
+			s.client.tokenClientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
 
 			resp, err := s.client.RefreshToken(context.Background(), "rt", "")
 

@@ -6151,9 +6151,8 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 		setHeaderRaw(req.Header, resolveWireCasing(key), value)
 	}
 	// Real Claude CLI uses Accept: application/json (even for streaming).
-	req.Header.Set("accept", "application/json")
-	req.Header.Set("accept-language", "*")
 	setHeaderRaw(req.Header, "Accept", "application/json")
+	setHeaderRaw(req.Header, "accept-language", "*")
 	if isStream {
 		setHeaderRaw(req.Header, "x-stainless-helper-method", "stream")
 	}

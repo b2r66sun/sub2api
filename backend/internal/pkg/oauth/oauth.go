@@ -23,6 +23,17 @@ const (
 	TokenURL     = "https://platform.claude.com/v1/oauth/token"
 	RedirectURI  = "https://platform.claude.com/oauth/code/callback"
 
+	// Browser auth request headers
+	BrowserAuthorizeAccept         = "application/json"
+	BrowserAuthorizeAcceptLanguage = "en-US,en;q=0.9"
+	BrowserAuthorizeCacheControl   = "no-cache"
+	BrowserAuthorizeOrigin         = "https://claude.ai"
+	BrowserAuthorizeReferer        = "https://claude.ai/new"
+
+	// Token endpoint request headers
+	TokenAccept    = "application/json, text/plain, */*"
+	TokenUserAgent = "axios/1.13.6"
+
 	// Scopes - Browser URL (includes org:create_api_key for user authorization)
 	ScopeOAuth = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers"
 	// Scopes - Internal API call (org:create_api_key not supported in API)

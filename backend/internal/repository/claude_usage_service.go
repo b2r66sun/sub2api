@@ -54,43 +54,43 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 		return nil, fmt.Errorf("create request failed: %w", err)
 	}
 
-	// 设置请求头（与抓包一致，但不设置 Accept-Encoding，让 Go 自动处理压缩）
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+opts.AccessToken)
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	// 设置请求头（绕过 Go canonical-case 归一化，保持真实 wire casing）
+	req.Header["Accept"] = []string{"application/json, text/plain, */*"}
+	req.Header["content-type"] = []string{"application/json"}
+	req.Header["authorization"] = []string{"Bearer " + opts.AccessToken}
+	req.Header["anthropic-beta"] = []string{"oauth-2025-04-20"}
 
 	// 设置 User-Agent（优先使用缓存的 Fingerprint，否则使用默认值）
 	userAgent := defaultUsageUserAgent
 	if opts.Fingerprint != nil && opts.Fingerprint.UserAgent != "" {
 		userAgent = opts.Fingerprint.UserAgent
 	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("X-Stainless-Lang", claude.DefaultHeaders["X-Stainless-Lang"])
-	req.Header.Set("X-Stainless-Package-Version", claude.DefaultHeaders["X-Stainless-Package-Version"])
-	req.Header.Set("X-Stainless-OS", claude.DefaultHeaders["X-Stainless-OS"])
-	req.Header.Set("X-Stainless-Arch", claude.DefaultHeaders["X-Stainless-Arch"])
-	req.Header.Set("X-Stainless-Runtime", claude.DefaultHeaders["X-Stainless-Runtime"])
-	req.Header.Set("X-Stainless-Runtime-Version", claude.DefaultHeaders["X-Stainless-Runtime-Version"])
-	req.Header.Set("accept-language", "*")
+	req.Header["User-Agent"] = []string{userAgent}
+	req.Header["X-Stainless-Lang"] = []string{claude.DefaultHeaders["X-Stainless-Lang"]}
+	req.Header["X-Stainless-Package-Version"] = []string{claude.DefaultHeaders["X-Stainless-Package-Version"]}
+	req.Header["X-Stainless-OS"] = []string{claude.DefaultHeaders["X-Stainless-OS"]}
+	req.Header["X-Stainless-Arch"] = []string{claude.DefaultHeaders["X-Stainless-Arch"]}
+	req.Header["X-Stainless-Runtime"] = []string{claude.DefaultHeaders["X-Stainless-Runtime"]}
+	req.Header["X-Stainless-Runtime-Version"] = []string{claude.DefaultHeaders["X-Stainless-Runtime-Version"]}
+	req.Header["accept-language"] = []string{"*"}
 	if opts.Fingerprint != nil {
 		if opts.Fingerprint.StainlessLang != "" {
-			req.Header.Set("X-Stainless-Lang", opts.Fingerprint.StainlessLang)
+			req.Header["X-Stainless-Lang"] = []string{opts.Fingerprint.StainlessLang}
 		}
 		if opts.Fingerprint.StainlessPackageVersion != "" {
-			req.Header.Set("X-Stainless-Package-Version", opts.Fingerprint.StainlessPackageVersion)
+			req.Header["X-Stainless-Package-Version"] = []string{opts.Fingerprint.StainlessPackageVersion}
 		}
 		if opts.Fingerprint.StainlessOS != "" {
-			req.Header.Set("X-Stainless-OS", opts.Fingerprint.StainlessOS)
+			req.Header["X-Stainless-OS"] = []string{opts.Fingerprint.StainlessOS}
 		}
 		if opts.Fingerprint.StainlessArch != "" {
-			req.Header.Set("X-Stainless-Arch", opts.Fingerprint.StainlessArch)
+			req.Header["X-Stainless-Arch"] = []string{opts.Fingerprint.StainlessArch}
 		}
 		if opts.Fingerprint.StainlessRuntime != "" {
-			req.Header.Set("X-Stainless-Runtime", opts.Fingerprint.StainlessRuntime)
+			req.Header["X-Stainless-Runtime"] = []string{opts.Fingerprint.StainlessRuntime}
 		}
 		if opts.Fingerprint.StainlessRuntimeVersion != "" {
-			req.Header.Set("X-Stainless-Runtime-Version", opts.Fingerprint.StainlessRuntimeVersion)
+			req.Header["X-Stainless-Runtime-Version"] = []string{opts.Fingerprint.StainlessRuntimeVersion}
 		}
 	}
 

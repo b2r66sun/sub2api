@@ -173,7 +173,6 @@ func createTestPayload(modelID, userAgent string) (map[string]any, error) {
 		"metadata": map[string]string{
 			"user_id": sessionID,
 		},
-		"tools":      []any{},
 		"max_tokens": 16384,
 		"stream":     true,
 	}, nil
@@ -304,26 +303,30 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, "Failed to create request")
 	}
 
-	// Set common headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
+	// Set common headers (use setHeaderRaw to preserve wire casing)
+	setHeaderRaw(req.Header, "content-type", "application/json")
+	setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
 
-	// Apply Claude Code client headers
+	// Apply Claude Code client headers (preserve wire casing)
 	for key, value := range claude.DefaultHeaders {
-		req.Header.Set(key, value)
+		if value == "" {
+			continue
+		}
+		setHeaderRaw(req.Header, resolveWireCasing(key), value)
 	}
-	req.Header.Set("accept-language", "*")
+	setHeaderRaw(req.Header, "accept-language", "*")
+	setHeaderRaw(req.Header, "Accept", "application/json")
 	if fingerprint != nil && s.identityService != nil {
 		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 
-	// Set authentication header
+	// Set authentication header (preserve wire casing)
 	if useBearer {
-		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
-		req.Header.Set("Authorization", "Bearer "+authToken)
+		setHeaderRaw(req.Header, "anthropic-beta", claude.DefaultBetaHeader)
+		setHeaderRaw(req.Header, "authorization", "Bearer "+authToken)
 	} else {
-		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
-		req.Header.Set("x-api-key", authToken)
+		setHeaderRaw(req.Header, "anthropic-beta", claude.APIKeyBetaHeader)
+		setHeaderRaw(req.Header, "x-api-key", authToken)
 	}
 
 	// Get proxy URL
