@@ -39,6 +39,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - JWT_SECRET=${JWT_SECRET:-}
       - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
+      - CLAUDE_UPSTREAM_OVERRIDE=${CLAUDE_UPSTREAM_OVERRIDE:-}
       - TZ=${TZ:-Asia/Shanghai}
     depends_on:
       postgres:
@@ -58,6 +59,8 @@ services:
     image: postgres:18-alpine
     container_name: sub2api-postgres-dev
     restart: unless-stopped
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     environment:
@@ -79,6 +82,8 @@ services:
     image: redis:8-alpine
     container_name: sub2api-redis-dev
     restart: unless-stopped
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - ./redis_data:/data
     command: >

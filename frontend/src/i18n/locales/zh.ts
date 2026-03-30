@@ -2025,6 +2025,12 @@ export default {
       privacyAntigravitySet: '已关闭遥测和营销邮件',
       privacyAntigravityFailed: '隐私设置失败',
       setPrivacy: '设置隐私',
+      identityFingerprint: {
+        title: '账号指纹',
+        menu: '账号指纹',
+        noCache: '该账号暂无缓存的身份指纹。首次转发请求时将自动创建。',
+        updatedAt: '更新时间',
+      },
       subscriptionAbnormal: '异常',
       // 容量状态提示
       capacity: {

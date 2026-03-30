@@ -3,6 +3,8 @@ package service
 import (
 	"net/http"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 )
 
 // headerWireCasing 定义每个白名单 header 在真实 Claude CLI 抓包中的准确大小写。
@@ -39,38 +41,12 @@ var headerWireCasing = map[string]string{
 	"x-claude-code-session-id":                  "X-Claude-Code-Session-Id",
 }
 
-// headerWireOrder 定义真实 Claude CLI 发送 header 的顺序（基于抓包）。
-// 用于 debug log 按此顺序输出，便于与抓包结果直接对比。
-var headerWireOrder = []string{
-	"Accept",
-	"X-Stainless-Retry-Count",
-	"X-Stainless-Timeout",
-	"X-Stainless-Lang",
-	"X-Stainless-Package-Version",
-	"X-Stainless-OS",
-	"X-Stainless-Arch",
-	"X-Stainless-Runtime",
-	"X-Stainless-Runtime-Version",
-	"anthropic-dangerous-direct-browser-access",
-	"anthropic-version",
-	"x-app",
-	"User-Agent",
-	"X-Claude-Code-Session-Id",
-	"authorization",
-	"content-type",
-	"anthropic-beta",
-	"accept-language",
-	"sec-fetch-mode",
-	"accept-encoding",
-	"x-stainless-helper-method",
-}
-
-// headerWireOrderSet 用于快速判断某个 key 是否在 headerWireOrder 中（按 lowercase 匹配）。
+// headerWireOrderSet 用于快速判断某个 key 是否在 HeaderWireOrder 中（按 lowercase 匹配）。
 var headerWireOrderSet map[string]struct{}
 
 func init() {
-	headerWireOrderSet = make(map[string]struct{}, len(headerWireOrder))
-	for _, k := range headerWireOrder {
+	headerWireOrderSet = make(map[string]struct{}, len(claude.HeaderWireOrder))
+	for _, k := range claude.HeaderWireOrder {
 		headerWireOrderSet[strings.ToLower(k)] = struct{}{}
 	}
 }
@@ -124,7 +100,7 @@ func getHeaderRaw(h http.Header, key string) string {
 }
 
 // sortHeadersByWireOrder 按照真实 Claude CLI 的 header 顺序返回排序后的 key 列表。
-// 在 headerWireOrder 中定义的 key 按其顺序排列，未定义的 key 追加到末尾。
+// 在 claude.HeaderWireOrder 中定义的 key 按其顺序排列，未定义的 key 追加到末尾。
 func sortHeadersByWireOrder(h http.Header) []string {
 	// 构建 lowercase -> actual map key 的映射
 	present := make(map[string]string, len(h))
@@ -136,7 +112,7 @@ func sortHeadersByWireOrder(h http.Header) []string {
 	seen := make(map[string]struct{}, len(h))
 
 	// 先按 wire order 输出
-	for _, wk := range headerWireOrder {
+	for _, wk := range claude.HeaderWireOrder {
 		lk := strings.ToLower(wk)
 		if actual, ok := present[lk]; ok {
 			if _, dup := seen[lk]; !dup {

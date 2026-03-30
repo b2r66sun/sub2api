@@ -45,6 +45,13 @@
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
             </button>
+            <template v-if="isClaudePlatform">
+              <div class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
+              <button @click="$emit('identity-fingerprint', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-cyan-600 hover:bg-gray-100 dark:hover:bg-dark-700">
+                <Icon name="badge" size="sm" />
+                {{ t('admin.accounts.identityFingerprint.menu') }}
+              </button>
+            </template>
           </template>
         </div>
       </div>
@@ -59,7 +66,7 @@ import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 
 const props = defineProps<{ show: boolean; account: Account | null; position: { top: number; left: number } | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'identity-fingerprint'])
 const { t } = useI18n()
 const isRateLimited = computed(() => {
   if (props.account?.rate_limit_reset_at && new Date(props.account.rate_limit_reset_at) > new Date()) {
@@ -82,6 +89,7 @@ const hasRecoverableState = computed(() => {
 const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravity' && props.account?.type === 'oauth')
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
 const supportsPrivacy = computed(() => isAntigravityOAuth.value || isOpenAIOAuth.value)
+const isClaudePlatform = computed(() => props.account?.platform === 'anthropic')
 const hasQuotaLimit = computed(() => {
   return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
     (props.account?.quota_limit ?? 0) > 0 ||

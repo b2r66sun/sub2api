@@ -48,9 +48,9 @@ const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
-	"User-Agent":                                "claude-cli/2.1.84 (external, cli)",
+	"User-Agent":                                "claude-cli/2.1.86 (external, cli)",
 	"X-Stainless-Lang":                          "js",
-	"X-Stainless-Package-Version":               "0.70.0",
+	"X-Stainless-Package-Version":               "0.74.0",
 	"X-Stainless-OS":                            "Linux",
 	"X-Stainless-Arch":                          "x64",
 	"X-Stainless-Runtime":                       "node",
@@ -114,6 +114,35 @@ func DefaultModelIDs() []string {
 
 // DefaultTestModel 测试时使用的默认模型
 const DefaultTestModel = "claude-sonnet-4-5-20250929"
+
+// HeaderWireOrder 定义真实 Claude CLI 发送 header 的顺序（基于抓包）。
+// 使用真实的 wire casing，用于 HTTP/2 HPACK 编码和 debug 日志。
+var HeaderWireOrder = []string{
+	"Accept",
+	"X-Stainless-Retry-Count",
+	"X-Stainless-Timeout",
+	"X-Stainless-Lang",
+	"X-Stainless-Package-Version",
+	"X-Stainless-OS",
+	"X-Stainless-Arch",
+	"X-Stainless-Runtime",
+	"X-Stainless-Runtime-Version",
+	"anthropic-dangerous-direct-browser-access",
+	"anthropic-version",
+	"x-app",
+	"User-Agent",
+	"X-Claude-Code-Session-Id",
+	"authorization",
+	"content-type",
+	"anthropic-beta",
+	"accept-language",
+	"sec-fetch-mode",
+	"accept-encoding",
+	"x-stainless-helper-method",
+}
+
+// PseudoHeaderOrder 定义 HTTP/2 伪头部的顺序（匹配 Node.js HTTP/2 客户端）。
+var PseudoHeaderOrder = []string{":method", ":authority", ":scheme", ":path"}
 
 // ModelIDOverrides Claude OAuth 请求需要的模型 ID 映射
 var ModelIDOverrides = map[string]string{

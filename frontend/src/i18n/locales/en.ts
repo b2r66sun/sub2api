@@ -1987,6 +1987,12 @@ export default {
       privacyAntigravitySet: 'Telemetry and marketing emails disabled',
       privacyAntigravityFailed: 'Privacy setting failed',
       setPrivacy: 'Set Privacy',
+      identityFingerprint: {
+        title: 'Identity Fingerprint',
+        menu: 'Identity Fingerprint',
+        noCache: 'No cached identity fingerprint for this account. A fingerprint will be created when the first request is forwarded.',
+        updatedAt: 'Updated At',
+      },
       subscriptionAbnormal: 'Abnormal',
       // Capacity status tooltips
       capacity: {

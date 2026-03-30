@@ -145,6 +145,13 @@ func createTestPayload(modelID, userAgent string) (map[string]any, error) {
 		return nil, err
 	}
 
+	// 生成 billing block（与真实 Claude Code 请求一致，system[0] 为 billing header）
+	cliVersion := ExtractCLIVersion(userAgent)
+	if cliVersion == "" {
+		cliVersion = ExtractCLIVersion(claude.DefaultHeaders["User-Agent"])
+	}
+	billingText := GenerateBillingBlockText(cliVersion)
+
 	return map[string]any{
 		"model": modelID,
 		"messages": []map[string]any{
@@ -164,6 +171,10 @@ func createTestPayload(modelID, userAgent string) (map[string]any, error) {
 		"system": []map[string]any{
 			{
 				"type": "text",
+				"text": billingText,
+			},
+			{
+				"type": "text",
 				"text": claudeCodeSystemPrompt,
 				"cache_control": map[string]string{
 					"type": "ephemeral",
@@ -173,6 +184,7 @@ func createTestPayload(modelID, userAgent string) (map[string]any, error) {
 		"metadata": map[string]string{
 			"user_id": sessionID,
 		},
+		"tools":     []any{},
 		"max_tokens": 16384,
 		"stream":     true,
 	}, nil
@@ -425,7 +437,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}

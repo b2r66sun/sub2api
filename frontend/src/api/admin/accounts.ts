@@ -637,6 +637,34 @@ export async function setPrivacy(id: number): Promise<Account> {
   return data
 }
 
+export interface IdentityFingerprintResponse {
+  account_id: number
+  cached: boolean
+  fingerprint: {
+    client_id: string
+    user_agent: string
+    stainless_lang: string
+    stainless_package_version: string
+    stainless_os: string
+    stainless_arch: string
+    stainless_runtime: string
+    stainless_runtime_version: string
+    updated_at: string
+  } | null
+}
+
+/**
+ * Get identity fingerprint for an account
+ * @param id - Account ID
+ * @returns Cached identity fingerprint data
+ */
+export async function getIdentityFingerprint(id: number): Promise<IdentityFingerprintResponse> {
+  const { data } = await apiClient.get<IdentityFingerprintResponse>(
+    `/admin/accounts/${id}/identity-fingerprint`
+  )
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -674,7 +702,8 @@ export const accountsAPI = {
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,
-  setPrivacy
+  setPrivacy,
+  getIdentityFingerprint
 }
 
 export default accountsAPI

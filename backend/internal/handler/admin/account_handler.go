@@ -58,6 +58,7 @@ type AccountHandler struct {
 	sessionLimitCache       service.SessionLimitCache
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
+	identityCache           service.IdentityCache
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -75,6 +76,7 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	identityCache service.IdentityCache,
 ) *AccountHandler {
 	return &AccountHandler{
 		adminService:            adminService,
@@ -90,6 +92,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		identityCache:           identityCache,
 	}
 }
 
@@ -2150,4 +2153,45 @@ func sanitizeExtraBaseRPM(extra map[string]any) {
 		v = 10000
 	}
 	extra["base_rpm"] = v
+}
+
+// GetIdentityFingerprint returns the cached identity fingerprint for an account.
+// GET /api/v1/admin/accounts/:id/identity-fingerprint
+func (h *AccountHandler) GetIdentityFingerprint(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	if h.identityCache == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Identity cache not available")
+		return
+	}
+
+	fp, err := h.identityCache.GetFingerprint(c.Request.Context(), accountID)
+	if err != nil {
+		response.Success(c, gin.H{
+			"account_id":  accountID,
+			"cached":      false,
+			"fingerprint": nil,
+		})
+		return
+	}
+
+	response.Success(c, gin.H{
+		"account_id": accountID,
+		"cached":     true,
+		"fingerprint": gin.H{
+			"client_id":                 fp.ClientID,
+			"user_agent":               fp.UserAgent,
+			"stainless_lang":           fp.StainlessLang,
+			"stainless_package_version": fp.StainlessPackageVersion,
+			"stainless_os":             fp.StainlessOS,
+			"stainless_arch":           fp.StainlessArch,
+			"stainless_runtime":        fp.StainlessRuntime,
+			"stainless_runtime_version": fp.StainlessRuntimeVersion,
+			"updated_at":               fp.UpdatedAt,
+		},
+	})
 }

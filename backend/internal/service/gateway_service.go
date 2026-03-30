@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -38,10 +39,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
+var (
 	claudeAPIURL            = "https://api.anthropic.com/v1/messages?beta=true"
 	claudeAPICountTokensURL = "https://api.anthropic.com/v1/messages/count_tokens?beta=true"
-	stickySessionTTL        = time.Hour // 粘性会话TTL
+)
+
+func init() {
+	if override := os.Getenv("CLAUDE_UPSTREAM_OVERRIDE"); override != "" {
+		base := strings.TrimRight(override, "/")
+		claudeAPIURL = base + "/v1/messages?beta=true"
+		claudeAPICountTokensURL = base + "/v1/messages/count_tokens?beta=true"
+	}
+}
+
+const (
+	stickySessionTTL = time.Hour // 粘性会话TTL
 	defaultMaxLineSize      = 500 * 1024 * 1024
 	// Canonical Claude Code banner. Keep it EXACT (no trailing whitespace/newlines)
 	// to match real Claude CLI traffic as closely as possible. When we need a visual
@@ -1133,7 +1145,7 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 	if fp != nil {
 		uaVersion = ExtractCLIVersion(fp.UserAgent)
 	}
-	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
+	accountUUID := effectiveAccountUUID(account)
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
@@ -1152,6 +1164,26 @@ func generateSessionUUID(seed string) string {
 	bytes[8] = (bytes[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x",
 		bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16])
+}
+
+// missingAccountUUIDWarned deduplicates warnings for accounts missing account_uuid.
+var missingAccountUUIDWarned sync.Map
+
+// effectiveAccountUUID returns the account's stored account_uuid, or derives a
+// stable fallback UUID from the account ID when the stored value is missing.
+// This ensures metadata.user_id rewriting is never skipped for OAuth accounts,
+// preventing device_id and session_id from being passed through unchanged.
+func effectiveAccountUUID(account *Account) string {
+	if u := strings.TrimSpace(account.GetExtraString("account_uuid")); u != "" {
+		return u
+	}
+	derived := generateSessionUUID(fmt.Sprintf("sub2api-account-uuid-%d", account.ID))
+	if _, loaded := missingAccountUUIDWarned.LoadOrStore(account.ID, true); !loaded {
+		slog.Warn("account missing account_uuid in extra, using derived fallback — identity rewrite will use synthetic UUID",
+			"account_id", account.ID,
+			"derived_uuid", derived)
+	}
+	return derived
 }
 
 // SelectAccount 选择账号（粘性会话+优先级）
@@ -5391,7 +5423,7 @@ func (s *GatewayService) executeBedrockUpstream(
 			return nil, err
 		}
 
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, nil)
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 		if err != nil {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
@@ -5657,12 +5689,19 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
 			// 当 metadata 透传开启时跳过重写
 			if !enableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				// Billing block 版本是 version source of truth，用于 user_id 格式选择
+				effectiveUA := fp.UserAgent
+				if bv := ExtractBillingBlockVersion(body); bv != "" {
+					effectiveUA = ReconstructUAVersion(fp.UserAgent, bv)
+				}
+
+				accountUUID := effectiveAccountUUID(account)
+				if fp.ClientID != "" {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, effectiveUA); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
+				// Billing block (cc_version + suffix) 完全透传，不做修改
 			}
 		}
 	}
@@ -5693,6 +5732,24 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// OAuth账号：应用缓存的指纹到请求头（覆盖白名单透传的头）
 	if fingerprint != nil {
 		s.identityService.ApplyFingerprint(req, fingerprint)
+
+		// 版本适配策略：
+		// 1. 有 billing block → 以 billing block 版本为准（保护 suffix 校验）
+		// 2. 无 billing block → 以客户端原始 UA 版本为准（避免指纹升级后的高版本暗示应有 billing block）
+		// 两种情况都用指纹 UA 做模板（保留括号格式），只替换版本号
+		if bv := ExtractBillingBlockVersion(body); bv != "" {
+			setHeaderRaw(req.Header, "User-Agent", ReconstructUAVersion(fingerprint.UserAgent, bv))
+			if origPkgVer := getHeaderRaw(clientHeaders, "X-Stainless-Package-Version"); origPkgVer != "" {
+				setHeaderRaw(req.Header, "X-Stainless-Package-Version", origPkgVer)
+			}
+		} else if clientUA := getHeaderRaw(clientHeaders, "User-Agent"); clientUA != "" {
+			if cv := ExtractCLIVersion(clientUA); cv != "" {
+				setHeaderRaw(req.Header, "User-Agent", ReconstructUAVersion(fingerprint.UserAgent, cv))
+			}
+			if origPkgVer := getHeaderRaw(clientHeaders, "X-Stainless-Package-Version"); origPkgVer != "" {
+				setHeaderRaw(req.Header, "X-Stainless-Package-Version", origPkgVer)
+			}
+		}
 	}
 
 	// 同步 X-Claude-Code-Session-Id header 与 metadata.user_id 中的 session_id。
@@ -8376,12 +8433,19 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		if err == nil {
 			ctFingerprint = fp
 			if !ctEnableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				// Billing block 版本是 version source of truth，用于 user_id 格式选择
+				effectiveUA := fp.UserAgent
+				if bv := ExtractBillingBlockVersion(body); bv != "" {
+					effectiveUA = ReconstructUAVersion(fp.UserAgent, bv)
+				}
+
+				accountUUID := effectiveAccountUUID(account)
+				if fp.ClientID != "" {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, effectiveUA); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
+				// Billing block (cc_version + suffix) 完全透传，不做修改
 			}
 		}
 	}
@@ -8412,6 +8476,21 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// OAuth 账号：应用指纹到请求头（受设置开关控制）
 	if ctEnableFP && ctFingerprint != nil {
 		s.identityService.ApplyFingerprint(req, ctFingerprint)
+
+		// 版本适配策略（与 buildUpstreamRequest 一致）
+		if bv := ExtractBillingBlockVersion(body); bv != "" {
+			setHeaderRaw(req.Header, "User-Agent", ReconstructUAVersion(ctFingerprint.UserAgent, bv))
+			if origPkgVer := getHeaderRaw(clientHeaders, "X-Stainless-Package-Version"); origPkgVer != "" {
+				setHeaderRaw(req.Header, "X-Stainless-Package-Version", origPkgVer)
+			}
+		} else if clientUA := getHeaderRaw(clientHeaders, "User-Agent"); clientUA != "" {
+			if cv := ExtractCLIVersion(clientUA); cv != "" {
+				setHeaderRaw(req.Header, "User-Agent", ReconstructUAVersion(ctFingerprint.UserAgent, cv))
+			}
+			if origPkgVer := getHeaderRaw(clientHeaders, "X-Stainless-Package-Version"); origPkgVer != "" {
+				setHeaderRaw(req.Header, "X-Stainless-Package-Version", origPkgVer)
+			}
+		}
 	}
 
 	// 同步 X-Claude-Code-Session-Id header（与 buildUpstreamRequest 逻辑一致）

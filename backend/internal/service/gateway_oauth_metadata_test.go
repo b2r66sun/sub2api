@@ -29,8 +29,10 @@ func TestBuildOAuthMetadataUserID_FallbackWithoutAccountUUID(t *testing.T) {
 	got := svc.buildOAuthMetadataUserID(parsed, account, fp)
 	require.NotEmpty(t, got)
 
-	// Legacy format: user_{client}_account__session_{uuid}
-	re := regexp.MustCompile(`^user_[a-zA-Z0-9]+_account__session_[a-f0-9-]{36}$`)
+	// Even without stored account_uuid, effectiveAccountUUID derives a stable
+	// fallback so device_id/session_id are never passed through unchanged.
+	// Format: user_{client}_account_{derived-uuid}_session_{uuid}
+	re := regexp.MustCompile(`^user_[a-zA-Z0-9]+_account_[a-f0-9-]{36}_session_[a-f0-9-]{36}$`)
 	require.True(t, re.MatchString(got), "unexpected user_id format: %s", got)
 }
 
