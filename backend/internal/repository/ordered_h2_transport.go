@@ -24,6 +24,7 @@ type orderedH2Transport struct {
 
 // newOrderedH2Transport creates an HTTP/2 transport that sends headers in
 // Claude Code wire order and pseudo-headers in Node.js order.
+// HTTP/2 SETTINGS are configured to match Node.js/nghttp2 defaults.
 func newOrderedH2Transport(
 	dialTLS func(ctx context.Context, network, addr string) (net.Conn, error),
 ) *orderedH2Transport {
@@ -32,8 +33,27 @@ func newOrderedH2Transport(
 			return dialTLS(context.Background(), network, addr)
 		},
 		PseudoHeaderOrder: claude.PseudoHeaderOrder,
-		ReadIdleTimeout:   30 * time.Second,
-		PingTimeout:       15 * time.Second,
+
+		// HTTP/2 SETTINGS — match Node.js (nghttp2) client defaults
+		HeaderTableSize:   4096,  // SETTINGS_HEADER_TABLE_SIZE: spec default
+		InitialWindowSize: 65535, // SETTINGS_INITIAL_WINDOW_SIZE: spec default
+		// ConnectionFlow: 0 → uses fhttp default 15663105 (~15MB)
+		Settings: map[fhttp2.SettingID]uint32{
+			fhttp2.SettingEnablePush:           0,     // client disables server push
+			fhttp2.SettingMaxConcurrentStreams:  100,   // nghttp2 client default
+			fhttp2.SettingMaxFrameSize:          16384, // spec default
+		},
+		// SETTINGS frame field order — numerical, matching nghttp2
+		SettingsOrder: []fhttp2.SettingID{
+			fhttp2.SettingHeaderTableSize,
+			fhttp2.SettingEnablePush,
+			fhttp2.SettingMaxConcurrentStreams,
+			fhttp2.SettingInitialWindowSize,
+			fhttp2.SettingMaxFrameSize,
+		},
+
+		ReadIdleTimeout: 30 * time.Second,
+		PingTimeout:     15 * time.Second,
 	}
 	return &orderedH2Transport{transport: t}
 }
